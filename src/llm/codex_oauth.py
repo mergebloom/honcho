@@ -20,7 +20,7 @@ from typing import Any, cast
 
 import httpx
 import jwt
-from openai import AsyncOpenAI, AsyncStream, OpenAIError
+from openai import APIConnectionError, AsyncOpenAI, AsyncStream, OpenAIError
 from openai.types.responses import Response, ResponseStreamEvent
 
 from src._version import HONCHO_VERSION
@@ -29,7 +29,7 @@ from src.config import (
     CODEX_OAUTH_VERSION_PATTERN,
     validate_codex_oauth_params,
 )
-from src.exceptions import ValidationException
+from src.exceptions import UpstreamLLMError, ValidationException
 from src.llm.backend import CompletionResult, StreamChunk
 from src.llm.backends.openai import OpenAIBackend
 
@@ -43,6 +43,19 @@ _USER_AGENT = f"HonchoFork/{HONCHO_VERSION}"
 
 class CodexOAuthError(OpenAIError):
     """A safe error that the SDK propagates without wrapping provider content."""
+
+    def __init__(self, message: str, *, status_code: int | None = None) -> None:
+        super().__init__(message)
+        self.status_code: int | None = status_code
+
+
+def _safe_failure(error: Exception, message: str) -> Exception:
+    status = getattr(error, "status_code", None)
+    if (isinstance(status, int) and status >= 500) or isinstance(
+        error, (APIConnectionError, httpx.TransportError, TimeoutError)
+    ):
+        return UpstreamLLMError("Codex OAuth model provider is unavailable")
+    return ValidationException(message)
 
 
 def _header_claim(value: Any) -> str:
@@ -226,14 +239,17 @@ class _CodexOAuthTransport(httpx.AsyncBaseTransport):
                 status = response.status_code
                 await response.aclose()
                 raise CodexOAuthError(
-                    f"Codex OAuth HTTP request failed (status {status})"
+                    f"Codex OAuth HTTP request failed (status {status})",
+                    status_code=status,
                 )
             response.headers = httpx.Headers({"content-type": "text/event-stream"})
             return response
         except CodexOAuthError:
             raise
         except Exception:
-            raise CodexOAuthError("Codex OAuth network request failed") from None
+            raise CodexOAuthError(
+                "Codex OAuth network request failed", status_code=503
+            ) from None
 
     async def aclose(self) -> None:
         await self._transport.aclose()
@@ -360,9 +376,9 @@ class CodexOAuthBackend(OpenAIBackend):
         kwargs["extra_params"] = self._codex_extra_params(kwargs.get("extra_params"))
         try:
             return await super().complete(**kwargs)
-        except Exception:
-            raise ValidationException(
-                "Codex OAuth request failed or response was not complete"
+        except Exception as error:
+            raise _safe_failure(
+                error, "Codex OAuth request failed or response was not complete"
             ) from None
 
     async def stream(self, **kwargs: Any) -> AsyncIterator[StreamChunk]:
@@ -374,9 +390,9 @@ class CodexOAuthBackend(OpenAIBackend):
         try:
             async for chunk in super().stream(**kwargs):
                 yield chunk
-        except Exception:
-            raise ValidationException(
-                "Codex OAuth stream failed or response was not complete"
+        except Exception as error:
+            raise _safe_failure(
+                error, "Codex OAuth stream failed or response was not complete"
             ) from None
 
     def _responses_stream(self, params: dict[str, Any]) -> _CodexResponseStream:

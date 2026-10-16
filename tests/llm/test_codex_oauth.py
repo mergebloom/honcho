@@ -23,7 +23,7 @@ from src.config import (
     resolve_model_config,
     settings,
 )
-from src.exceptions import ValidationException
+from src.exceptions import UpstreamLLMError, ValidationException
 from src.llm import registry
 from src.llm.backend import CompletionResult
 from src.llm.codex_oauth import (
@@ -430,7 +430,9 @@ async def test_http_errors_never_leak_or_retry(
     )
     caplog.set_level(logging.DEBUG)
     async with make_client(token_file, handler) as client:
-        with pytest.raises(ValidationException) as error:
+        with pytest.raises(
+            UpstreamLLMError if status >= 500 else ValidationException
+        ) as error:
             await complete(make_backend(client))
     assert handler.call_count == 1
     assert SENTINEL not in str(error.value)
@@ -736,7 +738,7 @@ async def test_network_error_is_safe(
     caplog.set_level(logging.DEBUG)
     handler = Mock(side_effect=httpx.ReadTimeout(SENTINEL))
     async with make_client(token_file, handler) as client:
-        with pytest.raises(ValidationException) as error:
+        with pytest.raises(UpstreamLLMError) as error:
             await complete(make_backend(client))
     assert handler.call_count == 1
     assert SENTINEL not in str(error.value)

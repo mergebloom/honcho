@@ -16,7 +16,7 @@ import tempfile
 import time
 from pathlib import Path
 
-MAX_BYTES = 65536
+MAX_BYTES = 16384
 
 
 def publish(raw: bytes, directory: Path, uid: int = -1, gid: int = -1) -> dict:

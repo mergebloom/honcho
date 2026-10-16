@@ -32,7 +32,7 @@ its deployments. Preserve upstream licensing and contributor attribution.
 PR #825 is prior art, not imported implementation: its independent API/worker
 refresh managers can race the shared rotating grant. PR #1049 is protocol
 support, not OAuth. Neither upstream proposal implies official support for the
-the internal Codex endpoint. See `codex-oauth.md` for operational limitations.
+internal Codex endpoint. See `codex-oauth.md` for operational limitations.
 
 ## Upgrade procedure
 
