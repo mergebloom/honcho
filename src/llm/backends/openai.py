@@ -427,7 +427,7 @@ class OpenAIBackend:
         text_parts: list[str] = []
         output_items: list[Any] = []
         completed_response: Any = None
-        async with self._client.responses.stream(**params) as stream:
+        async with self._responses_stream(params) as stream:
             async for event in stream:
                 event_type = self._response_value(event, "type")
                 if event_type == "response.output_text.delta":
@@ -502,7 +502,7 @@ class OpenAIBackend:
         )
         terminal_response: Any = None
         output_items: list[Any] = []
-        async with self._client.responses.stream(**params) as stream:
+        async with self._responses_stream(params) as stream:
             async for event in stream:
                 event_type = self._response_value(event, "type")
                 if event_type == "response.output_text.delta":
@@ -542,6 +542,10 @@ class OpenAIBackend:
                     int(output_tokens) if isinstance(output_tokens, int) else None
                 ),
             )
+
+    def _responses_stream(self, params: dict[str, Any]) -> Any:
+        """Open a Responses stream, allowing transport-specific SDK managers."""
+        return self._client.responses.stream(**params)
 
     def _build_responses_params(
         self,

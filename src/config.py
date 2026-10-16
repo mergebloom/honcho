@@ -77,6 +77,69 @@ PROVIDER_TIMEOUT_ERROR_TEXT = (
     "provider_params.timeout must be a positive number of seconds"
 )
 
+CODEX_OAUTH_MAX_TIMEOUT = 600.0
+CODEX_OAUTH_VERSION_PATTERN = r"^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$"
+
+
+def validate_codex_oauth_params(provider_params: dict[str, Any]) -> None:
+    """Validate the deliberately narrow, opt-in Codex request surface."""
+    if "codex_oauth" not in provider_params:
+        return
+    if type(provider_params["codex_oauth"]) is not bool:
+        raise ValueError("provider_params.codex_oauth must be a boolean")
+    if not provider_params["codex_oauth"]:
+        return
+    allowed = {"codex_oauth", "api_mode", "timeout", "structured_output_mode"}
+    if provider_params.keys() - allowed:
+        raise ValueError("codex_oauth does not support these provider controls")
+    if provider_params.get("api_mode", "responses") != "responses":
+        raise ValueError("codex_oauth requires the Responses protocol")
+    structured_output_mode = provider_params.get(
+        "structured_output_mode", "json_schema"
+    )
+    if not isinstance(structured_output_mode, str) or structured_output_mode not in {
+        "json_schema",
+        "json_object",
+    }:
+        raise ValueError("codex_oauth requires a supported structured_output_mode")
+    if "timeout" in provider_params:
+        timeout = coerce_provider_timeout(provider_params["timeout"])
+        if timeout > CODEX_OAUTH_MAX_TIMEOUT:
+            raise ValueError("codex_oauth timeout cannot exceed 600 seconds")
+
+
+def _validate_codex_oauth_model(config: BaseModel) -> None:
+    """Check persisted and resolved configs without resolving any credentials."""
+    data = config.model_dump()
+    overrides = data.get("overrides", data)
+    provider_params = overrides.get("provider_params", {})
+    validate_codex_oauth_params(provider_params)
+    if provider_params.get("codex_oauth") is not True:
+        return
+    if data.get("transport") != "openai":
+        raise ValueError("codex_oauth is only supported on the 'openai' transport")
+    if any(
+        overrides.get(key) is not None for key in ("api_key", "api_key_env", "base_url")
+    ):
+        raise ValueError(
+            "codex_oauth forbids api_key, api_key_env and base_url overrides"
+        )
+    unsupported = (
+        "top_p",
+        "top_k",
+        "frequency_penalty",
+        "presence_penalty",
+        "seed",
+        "thinking_budget_tokens",
+        "stop_sequences",
+        "cache_policy",
+        "fallback",
+    )
+    if any(data.get(key) is not None for key in unsupported):
+        raise ValueError(
+            "codex_oauth does not support these model controls or fallback"
+        )
+
 
 def coerce_provider_timeout(value: Any) -> float:
     """Coerce a `provider_params.timeout` value to positive, finite seconds.
@@ -134,12 +197,22 @@ class ModelOverrideSettings(BaseModel):
     @classmethod
     def _validate_provider_params(cls, v: dict[str, Any]) -> dict[str, Any]:
         """Reject invalid Responses modes/timeouts at config load."""
+        validate_codex_oauth_params(v)
         api_mode = v.get("api_mode")
         if api_mode is not None and api_mode != "responses":
             raise ValueError("provider_params.api_mode must be 'responses' when set")
         if "timeout" not in v:
             return v
         return {**v, "timeout": coerce_provider_timeout(v["timeout"])}
+
+    @model_validator(mode="after")
+    def _validate_codex_overrides(self) -> "ModelOverrideSettings":
+        if self.provider_params.get("codex_oauth") is True and any(
+            value is not None
+            for value in (self.api_key, self.api_key_env, self.base_url)
+        ):
+            raise ValueError("codex_oauth forbids credential and base_url overrides")
+        return self
 
 
 class PromptCachePolicy(BaseModel):
@@ -259,6 +332,7 @@ class FallbackModelSettings(BaseModel):
 
     @model_validator(mode="after")
     def _validate_runtime_shape(self) -> "FallbackModelSettings":
+        _validate_codex_oauth_model(self)
         _validate_thinking_constraints(self.transport, self.thinking_budget_tokens)
         _validate_structured_output_mode(self.transport, self.structured_output_mode)
         _validate_api_mode_transport(self.transport, self.overrides.provider_params)
@@ -307,6 +381,7 @@ class ConfiguredModelSettings(BaseModel):
 
     @model_validator(mode="after")
     def _validate_runtime_shape(self) -> "ConfiguredModelSettings":
+        _validate_codex_oauth_model(self)
         _validate_thinking_constraints(self.transport, self.thinking_budget_tokens)
         _validate_structured_output_mode(self.transport, self.structured_output_mode)
         _validate_api_mode_transport(self.transport, self.overrides.provider_params)
@@ -348,6 +423,7 @@ class ResolvedFallbackConfig(BaseModel):
 
     @model_validator(mode="after")
     def _validate_api_mode_on_self(self) -> "ResolvedFallbackConfig":
+        _validate_codex_oauth_model(self)
         _validate_api_mode_transport(self.transport, self.provider_params)
         return self
 
@@ -395,6 +471,7 @@ class ModelConfig(BaseModel):
 
     @model_validator(mode="after")
     def _validate_thinking_constraints_on_self(self) -> "ModelConfig":
+        _validate_codex_oauth_model(self)
         _validate_thinking_constraints(self.transport, self.thinking_budget_tokens)
         _validate_api_mode_transport(self.transport, self.provider_params)
         return self
@@ -456,6 +533,8 @@ class ConfiguredEmbeddingModelSettings(BaseModel):
 
     @model_validator(mode="after")
     def _default_model_for_transport(self) -> "ConfiguredEmbeddingModelSettings":
+        if self.overrides.provider_params.get("codex_oauth") is True:
+            raise ValueError("codex_oauth is not supported for embeddings")
         if "model" not in self.model_fields_set:
             self.model = _default_embedding_model_for_transport(self.transport)
         return self
@@ -805,6 +884,11 @@ class SentrySettings(HonchoSettings):
 
 class LLMSettings(HonchoSettings):
     model_config = SettingsConfigDict(env_prefix="LLM_", extra="ignore")  # pyright: ignore
+
+    CODEX_OAUTH_TOKEN_FILE: str | None = None
+    CODEX_OAUTH_CLIENT_VERSION: str | None = Field(
+        default=None, pattern=CODEX_OAUTH_VERSION_PATTERN
+    )
 
     # API Keys for LLM providers
     ANTHROPIC_API_KEY: str | None = None

@@ -203,6 +203,17 @@ def client_for_model_config(
     CLIENTS (the test-mockable seam). Otherwise route through the cached
     override factories.
     """
+    if "codex_oauth" in model_config.provider_params:
+        ModelConfig.model_validate(model_config.model_dump())
+    if model_config.provider_params.get("codex_oauth") is True:
+        from .codex_oauth import get_codex_oauth_client
+
+        if provider != "openai":
+            raise ValidationException("Codex OAuth requires the openai transport")
+        return get_codex_oauth_client(
+            settings.LLM.CODEX_OAUTH_TOKEN_FILE,
+            settings.LLM.CODEX_OAUTH_CLIENT_VERSION,
+        )
     if model_config.api_key is None and model_config.base_url is None:
         existing_client = default_client(provider)
         if existing_client is not None:
@@ -233,7 +244,10 @@ def backend_for_provider(
         return AnthropicBackend(client)
     if provider == "openai":
         from .backends.openai import OpenAIBackend
+        from .codex_oauth import CodexOAuthBackend, CodexOAuthClient
 
+        if isinstance(client, CodexOAuthClient):
+            return CodexOAuthBackend(client)
         return OpenAIBackend(client)
     if provider == "gemini":
         from .backends.gemini import GeminiBackend
