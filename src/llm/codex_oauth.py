@@ -360,6 +360,13 @@ class CodexOAuthBackend(OpenAIBackend):
     @staticmethod
     def _codex_extra_params(extra_params: dict[str, Any] | None) -> dict[str, Any]:
         params = dict(extra_params or {})
+        # The shared executor always supplies its inactive per-call toggles.
+        # These are not requested provider controls; active/unknown values still
+        # fail closed below rather than being silently discarded.
+        if params.get("json_mode") is False or params.get("json_mode") is None:
+            params.pop("json_mode", None)
+        if params.get("verbosity") is None:
+            params.pop("verbosity", None)
         if "codex_oauth" in params and params["codex_oauth"] is not True:
             raise ValidationException("Codex OAuth cannot be disabled on this client")
         params["codex_oauth"] = True

@@ -6,7 +6,13 @@ import pytest
 from src.config import ModelConfig
 from src.exceptions import UpstreamLLMError
 from src.llm.request_builder import execute_completion
-from tests.llm.test_codex_oauth import make_backend, make_client, write_credentials
+from tests.llm.test_codex_oauth import (
+    make_backend,
+    make_client,
+    response_events,
+    sse,
+    write_credentials,
+)
 
 
 @pytest.fixture
@@ -14,6 +20,24 @@ def token_file(tmp_path):
     path = tmp_path / "access.json"
     write_credentials(path)
     return path
+
+
+async def test_real_executor_default_toggles_are_accepted(token_file):
+    from src.llm.executor import honcho_llm_call_inner
+
+    cfg = ModelConfig(
+        model="fixture-model", transport="openai", provider_params={"codex_oauth": True}
+    )
+    async with make_client(token_file, lambda _: sse(response_events())) as client:
+        result = await honcho_llm_call_inner(
+            provider="openai",
+            model=cfg.model,
+            prompt="Synthetic fixture",
+            max_tokens=32,
+            client_override=client,
+            selected_config=cfg,
+        )
+    assert result.content == "ok"
 
 
 @pytest.mark.parametrize("streaming", [False, True])
