@@ -22,7 +22,8 @@ def token_file(tmp_path):
     return path
 
 
-async def test_real_executor_default_toggles_are_accepted(token_file):
+@pytest.mark.parametrize("json_mode", [False, True])
+async def test_real_executor_default_toggles_are_accepted(token_file, json_mode):
     from src.llm.executor import honcho_llm_call_inner
 
     cfg = ModelConfig(
@@ -36,6 +37,8 @@ async def test_real_executor_default_toggles_are_accepted(token_file):
             max_tokens=32,
             client_override=client,
             selected_config=cfg,
+            json_mode=json_mode,
+            verbosity="low",
         )
     assert result.content == "ok"
 

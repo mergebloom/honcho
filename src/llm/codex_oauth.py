@@ -360,13 +360,16 @@ class CodexOAuthBackend(OpenAIBackend):
     @staticmethod
     def _codex_extra_params(extra_params: dict[str, Any] | None) -> dict[str, Any]:
         params = dict(extra_params or {})
-        # The shared executor always supplies its inactive per-call toggles.
-        # These are not requested provider controls; active/unknown values still
-        # fail closed below rather than being silently discarded.
-        if params.get("json_mode") is False or params.get("json_mode") is None:
-            params.pop("json_mode", None)
-        if params.get("verbosity") is None:
-            params.pop("verbosity", None)
+        # The shared executor owns these per-call toggles, rather than model
+        # provider_params. The generic Responses builder implements both.
+        json_mode = params.pop("json_mode", False)
+        verbosity = params.pop("verbosity", None)
+        if json_mode is not None and type(json_mode) is not bool:
+            raise ValidationException("Codex OAuth invalid JSON mode")
+        if verbosity is not None and (
+            not isinstance(verbosity, str) or verbosity not in {"low", "medium", "high"}
+        ):
+            raise ValidationException("Codex OAuth invalid verbosity")
         if "codex_oauth" in params and params["codex_oauth"] is not True:
             raise ValidationException("Codex OAuth cannot be disabled on this client")
         params["codex_oauth"] = True
@@ -377,6 +380,10 @@ class CodexOAuthBackend(OpenAIBackend):
                 "Codex OAuth unsupported request controls"
             ) from None
         params["api_mode"] = "responses"
+        if json_mode:
+            params["json_mode"] = True
+        if verbosity is not None:
+            params["verbosity"] = verbosity
         return params
 
     async def complete(self, **kwargs: Any) -> CompletionResult:

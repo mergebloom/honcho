@@ -54,7 +54,10 @@ passes its regressions. Keep Codex auth separate from generic Responses mode.
 Update `fork/UPSTREAM_BASE` to the reviewed upstream revision.
 
 1. Read release notes, dependency diffs, migration graph and all changed
-   provider/registry/config/history/structured-output code.
+   provider/registry/config/history/structured-output code. For separate API and
+   worker processes, explicitly enable the existing shared Redis cache
+   (`CACHE_ENABLED=true`, with a correct authenticated `CACHE_URL`); process-local
+   caches cannot receive a sibling worker's session-summary invalidations.
 2. Run `uv sync --frozen --group dev`, `uv run pytest tests/llm
    tests/utils/test_clients.py -q -n 0`, lint/typecheck changed Python, and the
    relevant database/API/worker tests against **isolated** PostgreSQL.
