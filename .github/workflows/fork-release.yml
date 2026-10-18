@@ -29,8 +29,8 @@ jobs:
         run: uv run --frozen pytest tests/llm tests/utils/test_clients.py -q -n 0
       - name: Validate fork Python
         run: |
-          uv run --frozen ruff check src/llm/codex_oauth.py tests/llm/test_codex_oauth.py
-          uv run --frozen ruff format --check src/llm/codex_oauth.py tests/llm/test_codex_oauth.py
+          uv run --frozen ruff check src/llm/codex_oauth.py tests/llm/test_codex_oauth.py tests/llm/test_codex_tiered_profile.py
+          uv run --frozen ruff format --check src/llm/codex_oauth.py tests/llm/test_codex_oauth.py tests/llm/test_codex_tiered_profile.py
           uv run --frozen basedpyright src/llm/codex_oauth.py
           git diff --check
   image:

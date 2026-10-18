@@ -68,6 +68,7 @@ COPY --chown=app:app alembic.ini /app/alembic.ini
 COPY --chown=app:app pyproject.toml /app/pyproject.toml
 # Copy config files - this will copy config.toml if it exists, and config.toml.example
 COPY --chown=app:app config.toml* /app/
+COPY --chown=app:app fork/codex-tiered.env.example /app/fork/codex-tiered.env.example
 
 # Switch to non-root user
 USER app

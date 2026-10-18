@@ -11,9 +11,9 @@ For example, configure a deriver role in `config.toml`:
 ```toml
 [llm]
 CODEX_OAUTH_TOKEN_FILE = "/run/honcho-codex/access.json"
-# Optional protocol version: set only to the version actually in use by the
-# credential owner's installed client. No discovery request is made by Honcho.
-# CODEX_OAUTH_CLIENT_VERSION = "0.146.0"
+# Leave CODEX_OAUTH_CLIENT_VERSION unset by default, like Hermes inference.
+# A stale forced compatibility version can hide newer models and cause an
+# account-shaped unsupported-model error. No discovery request is made here.
 
 [deriver.model_config]
 model = "YOUR_ACCOUNT_SUPPORTED_MODEL"
@@ -31,6 +31,26 @@ by this path and remain available only to ordinary models and embeddings.
 Configure each intended role explicitly, removing inherited unsupported
 controls and fallback settings. Codex models reject nonempty fallback configs;
 there is no automatic switch to billed OpenAI, DeepInfra, or another provider.
+
+## Opt-in tier-aware thinking profile
+
+`fork/codex-tiered.env.example` is a non-secret deployment profile, also shipped
+in the image at `/app/fork/codex-tiered.env.example`. It selects GPT-6.1-Sol for
+all text roles, keeping derivation, summaries and dream specialists at low effort.
+Dialectic minimal/low use low, medium uses medium, high uses high, and max uses
+max. It does not enable dreams, change embeddings, or alter retrieval/tool limits.
+
+For an already configured Codex OAuth deployment, use the reviewed release copy
+as an `env_file` for both API and worker. Remove the matching inline model/effort
+variables first: Compose `environment` values take precedence over `env_file`.
+Keep existing explicit `transport=openai`, `codex_oauth=true`, access-file mounts
+and private credentials. Verify the file checksum against the selected release
+and confirm each tier's real outbound `reasoning.effort` after deployment.
+
+This is an opt-in profile, not a change to upstream/global defaults. Higher effort
+can increase latency and subscription-quota use; passing protocol tests does not
+establish a memory-quality improvement. Confirm the selected account serves the
+exact model/effort; do not silently alias models or reintroduce a forced version.
 
 ## Credential ownership and rotation
 
