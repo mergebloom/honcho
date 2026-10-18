@@ -30,8 +30,8 @@ PROFILE = Path(__file__).resolve().parents[2] / "fork" / "codex-tiered.env.examp
 EFFORTS = {
     "DERIVER_MODEL_CONFIG": "low",
     "SUMMARY_MODEL_CONFIG": "low",
-    "DREAM_DEDUCTION_MODEL_CONFIG": "low",
-    "DREAM_INDUCTION_MODEL_CONFIG": "low",
+    "DREAM_DEDUCTION_MODEL_CONFIG": "medium",
+    "DREAM_INDUCTION_MODEL_CONFIG": "medium",
     "DIALECTIC_LEVELS__MINIMAL__MODEL_CONFIG": "low",
     "DIALECTIC_LEVELS__LOW__MODEL_CONFIG": "low",
     "DIALECTIC_LEVELS__MEDIUM__MODEL_CONFIG": "medium",
@@ -94,12 +94,11 @@ def test_profile_resolves_real_settings_without_changing_workflows(
     assert LLMSettings(_env_file=None).CODEX_OAUTH_CLIENT_VERSION is None
 
 
-@pytest.mark.parametrize("level", ["minimal", "low", "medium", "high", "max"])
+@pytest.mark.parametrize("prefix", list(EFFORTS))
 async def test_profile_effort_reaches_real_sdk_without_forced_version(
-    tmp_path: Path, level: str
+    tmp_path: Path, prefix: str
 ) -> None:
     profile = load_profile()
-    prefix = f"DIALECTIC_LEVELS__{level.upper()}__MODEL_CONFIG"
     token_file = tmp_path / "access.json"
     write_credentials(token_file)
     requests: list[httpx.Request] = []

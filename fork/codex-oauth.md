@@ -36,7 +36,8 @@ there is no automatic switch to billed OpenAI, DeepInfra, or another provider.
 
 `fork/codex-tiered.env.example` is a non-secret deployment profile, also shipped
 in the image at `/app/fork/codex-tiered.env.example`. It selects GPT-6.1-Sol for
-all text roles, keeping derivation, summaries and dream specialists at low effort.
+all text roles, keeping derivation and summaries at low effort. Both dream
+specialists use medium effort when dreams are explicitly enabled by the operator.
 Dialectic minimal/low use low, medium uses medium, high uses high, and max uses
 max. It does not enable dreams, change embeddings, or alter retrieval/tool limits.
 
