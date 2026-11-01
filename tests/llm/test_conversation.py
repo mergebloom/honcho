@@ -301,3 +301,49 @@ def test_truncate_messages_to_fit_runaway_result_does_not_displace_earlier_round
     assert count_message_tokens(truncated) <= 4_000
     assert truncated[: 2 + len(alpha) + len(beta)] == [_SYSTEM, _QUERY, *alpha, *beta]
     assert "[TRUNCATED to fit the input budget" in truncated[-1]["content"]
+
+
+def test_truncate_keeps_a_budget_line_with_its_tool_round() -> None:
+    """A plain user turn after the tool results (the tool loop's budget line)
+    stays in the round's unit, so it is kept or clipped with the results it
+    describes rather than standing alone as the newest unit."""
+    tool_use, tool_result = _TOOL_PAIRS[0]
+    budget_line = {"role": "user", "content": "Tool calls used: 1 of 10."}
+    messages = [_SYSTEM, _QUERY, tool_use, tool_result, budget_line]
+
+    truncated = truncate_messages_to_fit(messages, max_tokens=2_000)
+
+    assert count_message_tokens(truncated) <= 2_000
+    assert truncated[:3] == messages[:3]
+    assert _is_tool_result_message(truncated[3])
+    assert "[TRUNCATED to fit the input budget" in json.dumps(truncated[3])
+    assert truncated[4] == budget_line
+
+
+def test_strip_thinking_blocks_keeps_other_blocks_and_drops_emptied_messages() -> None:
+    from src.llm.conversation import strip_thinking_blocks
+
+    user: dict[str, Any] = {"role": "user", "content": "hi"}
+    tool_turn: dict[str, Any] = {
+        "role": "assistant",
+        "content": [
+            {"type": "thinking", "thinking": "plan", "signature": "sig"},
+            {"type": "redacted_thinking", "data": "opaque"},
+            {"type": "tool_use", "id": "t1", "name": "search", "input": {}},
+        ],
+    }
+    thinking_only: dict[str, Any] = {
+        "role": "assistant",
+        "content": [{"type": "thinking", "thinking": "x", "signature": "s"}],
+    }
+
+    stripped, removed = strip_thinking_blocks([user, tool_turn, thinking_only])
+
+    assert removed == 3
+    assert stripped[0] is user
+    assert stripped[1]["content"] == [
+        {"type": "tool_use", "id": "t1", "name": "search", "input": {}}
+    ]
+    assert len(stripped) == 2
+    # The input history is not modified.
+    assert len(tool_turn["content"]) == 3

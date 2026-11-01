@@ -1061,8 +1061,8 @@ class TestMainLLMCallFunction:
         assert [chunk.content for chunk in chunks] == ["partial"]
         assert not any(chunk.is_done for chunk in chunks)
 
-    async def test_stream_final_only_runs_tool_turns_non_streaming(self):
-        """The public stream-final-only path keeps tools off the final stream."""
+    async def test_stream_final_only_reuses_tool_loop_answer(self):
+        """v3.5 returns the loop answer without an extra billed generation."""
         from openai import AsyncOpenAI
 
         mock_client = AsyncMock(spec=AsyncOpenAI)
@@ -1159,12 +1159,10 @@ class TestMainLLMCallFunction:
 
         assert executed_tools == [("lookup", {"q": "memory"})]
         calls = mock_client.chat.completions.create.call_args_list
-        assert len(calls) == 3
+        assert len(calls) == 2
         assert "tools" in calls[0].kwargs
         assert "tools" in calls[1].kwargs
-        assert "tools" not in calls[2].kwargs
-        assert "tool_choice" not in calls[2].kwargs
-        assert [chunk.content for chunk in chunks if chunk.content] == ["Final answer"]
+        assert [chunk.content for chunk in chunks if chunk.content] == ["The answer"]
         assert chunks[-1].is_done is True
 
     async def test_retry_disabled(self):
@@ -1567,6 +1565,8 @@ class TestToolLoopValidation:
 
     @pytest.mark.parametrize("bad_value", [0, -1, 101, 1_000])
     async def test_invalid_max_tool_iterations_raises(self, bad_value: int) -> None:
+        """An out-of-range `max_tool_iterations` fails before any LLM call."""
+        from src.llm.errors import llm_retry_condition
         from src.llm.tool_loop import execute_tool_loop
 
         def _noop_plan() -> Any:  # pragma: no cover - never called
@@ -1599,4 +1599,7 @@ class TestToolLoopValidation:
                 max_input_tokens=None,
                 get_attempt_plan=_noop_plan,
                 before_retry_callback=_noop_retry_callback,
+                retry_condition=llm_retry_condition(
+                    can_fall_back=False, retry_attempts=3, model="test/model"
+                ),
             )

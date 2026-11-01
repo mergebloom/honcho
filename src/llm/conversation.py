@@ -85,17 +85,29 @@ def _is_tool_result_message(msg: dict[str, Any]) -> bool:
     )
 
 
+def _is_plain_user_message(msg: dict[str, Any]) -> bool:
+    """A user turn that carries neither tool calls nor tool results."""
+    return (
+        msg.get("role") == "user"
+        and not _is_tool_use_message(msg)
+        and not _is_tool_result_message(msg)
+    )
+
+
 def _group_into_units(
     messages: list[dict[str, Any]],
 ) -> list[list[dict[str, Any]]]:
     """Group messages into logical conversation units.
 
     A unit is either:
-    - A tool_use message + ALL consecutive tool_result messages that follow
+    - A tool_use message + ALL consecutive tool_result messages that follow,
+      plus a plain user message right after them (a budget line or synthesis
+      prompt the tool loop appends to the round)
     - A single non-tool message
 
     Keeps tool_use / tool_result pairs together so truncation never breaks
-    them apart.
+    them apart, and keeps a note on the round with it: as a unit of its own it
+    would be the last one kept, and every tool result would be dropped.
     """
     units: list[list[dict[str, Any]]] = []
     i = 0
@@ -106,6 +118,8 @@ def _group_into_units(
         if _is_tool_use_message(msg):
             j = i + 1
             while j < len(messages) and _is_tool_result_message(messages[j]):
+                j += 1
+            if j > i + 1 and j < len(messages) and _is_plain_user_message(messages[j]):
                 j += 1
             unit = messages[i:j]
             if len(unit) > 1:
@@ -373,7 +387,49 @@ def truncate_messages_to_fit(
     return result
 
 
+_THINKING_BLOCK_TYPES = frozenset({"thinking", "redacted_thinking"})
+
+
+def strip_thinking_blocks(
+    messages: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], int]:
+    """Remove Anthropic `thinking` / `redacted_thinking` blocks from a history.
+
+    A thinking block replayed to a model that checks it against the request
+    prefix (see `ModelCapabilities.preserved_thinking`) fails once anything
+    before it changes. Every turn's text and tool_use blocks stay, so the
+    history remains valid without the reasoning those blocks carried.
+
+    Returns:
+        The history with the blocks removed (messages without any are reused
+        as-is, messages holding nothing else are dropped) and how many blocks
+        were removed.
+    """
+    removed = 0
+    result: list[dict[str, Any]] = []
+    for msg in messages:
+        content = as_list(msg.get("content"))
+        if content is None:
+            result.append(msg)
+            continue
+        kept = [
+            block
+            for block in content
+            if (entry := as_dict(block)) is None
+            or entry.get("type") not in _THINKING_BLOCK_TYPES
+        ]
+        if len(kept) == len(content):
+            result.append(msg)
+            continue
+        removed += len(content) - len(kept)
+        if kept:
+            # A message left with no content would be rejected; drop it.
+            result.append({**msg, "content": kept})
+    return result, removed
+
+
 __all__ = [
     "count_message_tokens",
+    "strip_thinking_blocks",
     "truncate_messages_to_fit",
 ]

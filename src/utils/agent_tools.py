@@ -1506,7 +1506,9 @@ async def _handle_update_peer_card(
         else [str(raw_peer_card_content)]
     )
     for item in items:
-        line = str(item).strip()
+        # Strip NUL first: jsonb rejects it, and the checks below (emptiness,
+        # body, length cap, dedupe) must judge the text that gets stored.
+        line = strip_nul(str(item)).strip()
         if not line:
             continue
 
@@ -2371,6 +2373,13 @@ _TOOL_HANDLERS: dict[str, Callable[[ToolContext, dict[str, Any]], Any]] = {
     "delete_observations": _handle_delete_observations,
     "get_reasoning_chain": _handle_get_reasoning_chain,
 }
+
+
+def get_tool_handler(
+    tool_name: str,
+) -> Callable[[ToolContext, dict[str, Any]], Any] | None:
+    """Default handler lookup, for `handler_resolver`s that wrap it."""
+    return _TOOL_HANDLERS.get(tool_name)
 
 
 async def create_tool_executor(
